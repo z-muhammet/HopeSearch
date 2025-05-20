@@ -7,6 +7,9 @@ services:
     restart: always
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
     volumes:
       - mongodb_data:/data/db
 
@@ -17,14 +20,11 @@ services:
     ports:
       - "8081:8081"
     environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
       ME_CONFIG_MONGODB_SERVER: mongodb
     depends_on:
       - mongodb
-
-volumes:
-  mongodb_data:
-    driver: local
-
 
 volumes:
   mongodb_data:
