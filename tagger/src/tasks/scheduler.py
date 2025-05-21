@@ -15,6 +15,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+BATCH_SIZE = 50
+MAX_RETRY_COUNT = 3
+
 def main():
     logger.info("🚀 İşlem başlatıldı.")
     start_time = datetime.now()
@@ -26,85 +29,108 @@ def main():
     links_repo  = Repository(PROCESSED_SITES_SEO_LINKS, mongo)
     unproc_repo = Repository(UNPROCESSABLE_SITES, mongo)
 
-    # Tarih hesaplamaları
-    now = datetime.now()
-    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    one_week_ago = now - timedelta(weeks=1)
-    twelve_hours_ago = now - timedelta(hours=12)
+    iteration = 1
 
-    # Yeni işlenmemiş kayıtları al
-    new_records = spider_repo.get(
-        {"$or": [
-            {"last_processed_time": {"$exists": False}},
-            {"last_processed_time": {"$lt": one_week_ago}}
-        ]},
-        limit=50
-    )
+    while True:
+        logger.info("🔄 [%d. tur] Yeni kayıtlar alınıyor...", iteration)
 
-    # UNPROCESSABLE kayıtları (12 saatten eski olanlar)
-    unproc = list(unproc_repo.get(
-        {"processed_time": {"$lt": twelve_hours_ago.strftime("%Y-%m-%d %H:%M:%S")}},
-        limit=50
-    ))
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        one_week_ago = now - timedelta(weeks=1)
+        twelve_hours_ago = now - timedelta(hours=12)
 
-    logger.info("🧾 Yeni alınan kayıt sayısı: %d", len(new_records))
-    logger.info("♻️ 12 saatten eski UNPROCESSABLE sayısı: %d", len(unproc))
+        # Yeni işlenmemiş kayıtları al
+        new_records = list(spider_repo.get(
+            {"$or": [
+                {"last_processed_time": {"$exists": False}},
+                {"last_processed_time": {"$lt": one_week_ago}}
+            ]},
+            limit=BATCH_SIZE
+        ))
 
-    # Kuyruğa ekleme
-    full_input = new_records + unproc
-    id_url_map = {}
-    task_queue = Queue()
-    for rec in full_input:
-        id_url_map[rec["_id"]] = rec["url"]
-        task_queue.put((rec["_id"], rec["url"]))
+        # UNPROCESSABLE kayıtları
+        unproc = list(unproc_repo.get(
+            {
+                "processed_time": {"$lt": twelve_hours_ago.strftime("%Y-%m-%d %H:%M:%S")},
+                "$or": [
+                    {"retry_count": {"$exists": False}},
+                    {"retry_count": {"$lt": MAX_RETRY_COUNT}}
+                ]
+            },
+            limit=BATCH_SIZE
+        ))
 
-    # Batch işleme
-    thread_count = get_dynamic_thread_count()
-    batch_results = []
-    failed_ids = set()
+        if not new_records and not unproc:
+            logger.info("✅ [%d. tur] İşlenecek kayıt kalmadı, çıkılıyor.", iteration)
+            break
 
-    while not task_queue.empty():
-        batch = [task_queue.get() for _ in range(min(50, task_queue.qsize()))]
-        result_batch = process_batch(batch, thread_count)
+        logger.info("📦 [%d. tur] Yeni kayıt: %d, Retry: %d", iteration, len(new_records), len(unproc))
 
-        # Başarılı olanlar
-        batch_results.extend([r for r in result_batch if r])
+        # Kuyruğa ekleme
+        full_input = new_records + unproc
+        id_url_map = {}
+        task_queue = Queue()
+        for rec in full_input:
+            id_url_map[rec["_id"]] = rec["url"]
+            task_queue.put((rec["_id"], rec["url"]))
 
-        # Başarısızları yakala
-        input_ids = {_id for _id, _ in batch}
-        success_ids = {_r["_id"] for _r in result_batch if _r}
-        failed_ids.update(input_ids - success_ids)
+        # Batch işleme
+        thread_count = get_dynamic_thread_count()
+        batch_results = []
+        failed_ids = set()
 
-    # Kayıtları veritabanına yaz
-    for res in batch_results:
-        seo_repo.save(res)
-        links_repo.save({
-            "url": res["url"],
-            "processed_time": now_str
-        })
-        spider_repo.update(
-            {"_id": res["_id"]},
-            {"$set": {"last_processed_time": now}}
-        )
-        unproc_repo.delete({"_id": res["_id"]})  # varsa eski UNPROC'dan çıkar
+        while not task_queue.empty():
+            batch = [task_queue.get() for _ in range(min(BATCH_SIZE, task_queue.qsize()))]
+            result_batch = process_batch(batch, thread_count)
 
-    for _id in failed_ids:
-        url = id_url_map.get(_id)
-        if url:
-            unproc_repo.save({
-                "_id": _id,
-                "url": url,
+            batch_results.extend([r for r in result_batch if r])
+
+            input_ids = {_id for _id, _ in batch}
+            success_ids = {_r["_id"] for _r in result_batch if _r}
+            failed_ids.update(input_ids - success_ids)
+
+        # Başarılı kayıtlar
+        for res in batch_results:
+            seo_repo.save(res)
+            links_repo.save({
+                "url": res["url"],
                 "processed_time": now_str
             })
+            spider_repo.update(
+                {"_id": res["_id"]},
+                {"$set": {"last_processed_time": now}}
+            )
+            unproc_repo.delete({"_id": res["_id"]})
 
-    # Özet log
-    success_count = len(batch_results)
-    fail_count = len(failed_ids)
+        # Başarısız kayıtlar
+        for _id in failed_ids:
+            url = id_url_map.get(_id)
+            if url:
+                results = list(unproc_repo.get({"_id": _id}, limit=1))
+                existing = results[0] if results else None
+                retry_count = existing.get("retry_count", 0) + 1 if existing else 1
 
-    logger.info("✅ Başarıyla işlenen site sayısı: %d", success_count)
-    logger.info("⚠️ İşlenemeyen ve tekrar UNPROCESSABLE'a eklenen site sayısı: %d", fail_count)
-    logger.info("📦 Toplam giriş (yeni + retry): %d", len(full_input))
-    logger.info("⏱️ Toplam geçen süre: %s saniye", (datetime.now() - start_time).total_seconds())
+                if retry_count > MAX_RETRY_COUNT:
+                    logger.warning("❌ Site %s (%s) %d+ kez başarısız oldu, atlanıyor.", _id, url, retry_count)
+                    continue
 
-    logger.info("🎯 İşlem tamamlandı.\n")
+                unproc_repo.upsert(
+                    {"_id": _id},
+                    {
+                        "url": url,
+                        "processed_time": now_str,
+                        "retry_count": retry_count
+                    }
+                )
 
+        # Tur özeti
+        success_count = len(batch_results)
+        fail_count = len(failed_ids)
+
+        logger.info("✅ [%d. tur] Başarıyla işlenen: %d", iteration, success_count)
+        logger.info("⚠️ [%d. tur] Başarısız (UNPROCESSABLE'a eklendi): %d", iteration, fail_count)
+        logger.info("⏱️ [%d. tur] Süre: %.2f saniye", iteration, (datetime.now() - start_time).total_seconds())
+
+        iteration += 1
+
+    logger.info("🏁 Tüm işlemler tamamlandı. Toplam süre: %.2f saniye", (datetime.now() - start_time).total_seconds())
