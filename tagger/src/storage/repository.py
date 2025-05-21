@@ -2,10 +2,7 @@ from typing import Any, Dict, List
 from .mongo_context import MongoDbContext
 
 class Repository:
-    """
-    Bir MongoDbContext ve koleksiyon ismi alır,
-    CRUD işlemlerini bu ikili üzerinden kolaylaştırır.
-    """
+
     def __init__(self, collection_name: str, context: MongoDbContext):
         self.collection = collection_name
         self.ctx = context
@@ -21,3 +18,10 @@ class Repository:
 
     def delete(self, filter_query: Dict[str, Any]):
         return self.ctx.delete_from_mongo(self.collection, filter_query)
+
+    def upsert(self, filter_query, update_data):
+        return self.ctx.db[self.collection].update_one(
+            filter_query,
+            {"$set": update_data},
+            upsert=True
+        )
