@@ -1,13 +1,3 @@
-www.antalyaeo.org.tr
-harb-is.org.tr
-www.artvinkhb.gov.tr
-www.isay.gov.tr
-www.hamle.gov.tr
-webim.tki.gov.tr
-www.hak.gov.tr
-akdeniz.meb.gov.tr
-teknoloji.gib.gov.tr
-mezitli.meb.gov.tr
 adminapi.tcddtasimacilik.gov.tr
 www.yokak.gov.tr
 merkezitibbicihazgeribildirim.saglik.gov.tr
