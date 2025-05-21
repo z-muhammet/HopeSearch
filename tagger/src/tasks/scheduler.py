@@ -22,7 +22,6 @@ def main():
     logger.info("🚀 İşlem başlatıldı.")
     start_time = datetime.now()
 
-    # Mongo bağlantısı ve repository'ler
     mongo = MongoDbContext()
     spider_repo = Repository(PROCESSED_COLLECTION_SPIDER, mongo)
     seo_repo    = Repository(PROCESSED_SITES_SEO, mongo)
@@ -39,7 +38,7 @@ def main():
         one_week_ago = now - timedelta(weeks=1)
         twelve_hours_ago = now - timedelta(hours=12)
 
-        # Yeni işlenmemiş kayıtları al
+        # Yeni işlenmemiş kayıtlar
         new_records = list(spider_repo.get(
             {"$or": [
                 {"last_processed_time": {"$exists": False}},
@@ -48,7 +47,7 @@ def main():
             limit=BATCH_SIZE
         ))
 
-        # UNPROCESSABLE kayıtları
+        # UNPROCESSABLE kayıtlar (yalnızca 12 saatten eski olanlar)
         unproc = list(unproc_repo.get(
             {
                 "processed_time": {"$lt": twelve_hours_ago.strftime("%Y-%m-%d %H:%M:%S")},
@@ -108,10 +107,23 @@ def main():
             if url:
                 results = list(unproc_repo.get({"_id": _id}, limit=1))
                 existing = results[0] if results else None
-                retry_count = existing.get("retry_count", 0) + 1 if existing else 1
 
-                if retry_count > MAX_RETRY_COUNT:
-                    logger.warning("❌ Site %s (%s) %d+ kez başarısız oldu, atlanıyor.", _id, url, retry_count)
+                should_retry = True
+                retry_count = 1
+                if existing:
+                    last_time_str = existing.get("processed_time")
+                    try:
+                        last_time = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
+                        if last_time > twelve_hours_ago:
+                            should_retry = False
+                        else:
+                            retry_count = existing.get("retry_count", 0) + 1
+                    except Exception as e:
+                        logger.warning("⛔ Site %s (%s) için tarih parse edilemedi: %s", _id, url, str(e))
+
+                if not should_retry or retry_count > MAX_RETRY_COUNT:
+                    if retry_count > MAX_RETRY_COUNT:
+                        logger.warning("❌ Site %s (%s) %d+ kez başarısız oldu, atlanıyor.", _id, url, retry_count)
                     continue
 
                 unproc_repo.upsert(
@@ -128,7 +140,7 @@ def main():
         fail_count = len(failed_ids)
 
         logger.info("✅ [%d. tur] Başarıyla işlenen: %d", iteration, success_count)
-        logger.info("⚠️ [%d. tur] Başarısız (UNPROCESSABLE'a eklendi): %d", iteration, fail_count)
+        logger.info("⚠️ [%d. tur] Başarısız (UNPROCESSABLE'a eklendi veya güncellenmedi): %d", iteration, fail_count)
         logger.info("⏱️ [%d. tur] Süre: %.2f saniye", iteration, (datetime.now() - start_time).total_seconds())
 
         iteration += 1
