@@ -47,34 +47,52 @@ def generate_search_variants(word_list, model):
     return list(search_variants)
 
 def keyword_in_field(field_value, variants, url=""):
-    """Bir metin alanında arama varyantlarından herhangi bir anahtar kelime olup olmadığını kontrol eder."""
+    """Bir metin alanında arama varyantlarından herhangi biri, kelime içinde geçiyorsa eşleşme kabul edilir."""
+    import re
+
     if not isinstance(field_value, str):
         if isinstance(field_value, list):
             field_value = " ".join(filter(None, map(str, field_value)))
         else:
             field_value = str(field_value) if field_value is not None else ""
 
-    keywords = [k.strip().lower() for k in field_value.split(",") if k.strip()]
-    match_found = any(v.lower() in keywords for v in variants)
-    logging.info(f"[{url}] Alanda eşleşme: {match_found}")
+    # Metindeki tüm kelimeleri virgül, boşluk, noktalama gibi ayraçlara göre parçala
+    keywords = [k.strip().lower() for k in re.split(r"[,\s;|.]+", field_value) if k.strip()]
+
+    # Her variant, kelimelerden herhangi birinin içinde geçiyorsa eşleşme say
+    match_found = any(
+        any(v.lower() in kw for kw in keywords)
+        for v in variants
+    )
+
+    logging.info(f"[{url}] Alanda (parça eşleşme) var mı: {match_found}")
     return match_found
 
 def calculate_ratio(field_value, variants, url=""):
-    """Bir metin alanındaki anahtar kelimelerin, arama varyantlarıyla eşleşme oranını hesaplar."""
+    """Bir metin alanındaki anahtar kelimelerin, arama varyantlarıyla parça eşleşme oranını hesaplar."""
+    import re
+
     if not isinstance(field_value, str):
         if isinstance(field_value, list):
             field_value = " ".join(filter(None, map(str, field_value)))
         else:
             field_value = str(field_value) if field_value is not None else ""
 
-    keywords = [k.strip().lower() for k in field_value.split(",") if k.strip()]
+    # Noktalama, boşluk, virgül vb. ile parçala
+    keywords = [k.strip().lower() for k in re.split(r"[,\s;|.]+", field_value) if k.strip()]
     total_count = len(keywords)
     if total_count == 0:
         return 0.0
-    
-    match_count = sum(keywords.count(v.lower()) for v in variants)
+
+    # Parça eşleşme kontrolü
+    match_count = sum(
+        1 for kw in keywords
+        for v in variants
+        if v.lower() in kw
+    )
+
     ratio = match_count / total_count
-    logging.info(f"[{url}] Kelime oranı: {ratio:.3f}")
+    logging.info(f"[{url}] Parça eşleşmeli kelime oranı: {ratio:.3f}")
     return ratio
 
 def convert_object_ids_to_str(data):
@@ -183,13 +201,40 @@ if __name__ == "__main__":
 
         h1_kw_present = keyword_in_field(record.get("h1_keyword", ""), search_variants, url)
         title_kw_present = keyword_in_field(record.get("title_keyword", ""), search_variants, url)
-        content_ratio = calculate_ratio(record.get("content_keyword_match", ""), search_variants, url)
-        meta_ratio = calculate_ratio(record.get("meta_keyword_density", ""), search_variants, url)
+        content_ratio = calculate_ratio(record.get("random_content", ""), search_variants, url)
+        meta_ratio = calculate_ratio(record.get("meta_keyword", ""), search_variants, url)
+        h2_kw_present = keyword_in_field(record.get("h2_keyword", ""), search_variants, url)
+        h3_kw_present = keyword_in_field(record.get("h3_keyword", ""), search_variants, url)
+        meta_kw_present = keyword_in_field(record.get("meta_keyword", ""), search_variants, url)
+        strong_kw_present = keyword_in_field(record.get("strong_texts", ""), search_variants, url)
+        underline_kw_present = keyword_in_field(record.get("underline_texts", ""), search_variants, url)
 
+                # --- Kayıt anlamsal olarak tamamen boşsa atla ---
+        if (
+            not h1_kw_present and
+            not h2_kw_present and
+            not h3_kw_present and
+            not meta_kw_present and
+            not strong_kw_present and
+            not underline_kw_present and
+            not title_kw_present and
+            content_ratio == 0 and
+            meta_ratio == 0 
+        ):
+            logging.info(f"[{current_site_index}/{current_total_sites_in_db}] Anlamsal eşleşme yok, kayıt atlandı: {url}")
+            print(f"[{current_site_index}/{current_total_sites_in_db}] Anlamsal eşleşme yok, kayıt atlandı: {url}")
+            continue
+
+        
         processed_record = {
             "_id": str(record["_id"]) if "_id" in record else None,
             "url": url,
             "h1_keyword": h1_kw_present,
+            "h2_keyword": h2_kw_present,
+            "h3_keyword": h3_kw_present,
+            "meta_keyword": meta_kw_present,
+            "strong_texts": strong_kw_present,
+            "underline_texts": underline_kw_present,
             "title_keyword": title_kw_present,
             "content_keyword_match": round(content_ratio, 3),
             "meta_keyword_density": round(meta_ratio, 3),
