@@ -31,11 +31,11 @@ print(f"[INFO] Veritabanından {page_count} kayıt bulundu.")
 
 # Yoğunluk eşik değeri belirle
 if page_count >= 1000:
-    density = 0.5
+    density = 0.1
 elif 500 <= page_count < 1000:
-    density = 0.4
+    density = 0.01
 else:
-    density = 0
+    density =0
 
 print(f"[INFO] Uygulanan yoğunluk filtresi (density): {density}")
 
@@ -46,7 +46,7 @@ def filter_page_by_keyword(pages, density):
         update_year = page.get("last_update_year")
         if update_year is not None and update_year < 2015:
             continue
-        if page.get("h1_keyword") or page.get("content_keyword_match", 0) > density or page.get("title_keyword") or page.get("meta_keyword_density",0):
+        if page.get("h1_keyword") or page.get("h2_keyword") or page.get("h3_keyword") or page.get("content_keyword_match", 0) > density or page.get("title_keyword") or page.get("meta_keyword_density",0):
             filtered_pages.append(page)
     return filtered_pages
 

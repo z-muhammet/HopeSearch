@@ -232,10 +232,8 @@ async def worker(session, worker_id: int, idle_limit: int = 3):
 
         links = await fetch(session, url)
         if links is None:
-            # Eğer fetch None döndürdüyse, önce CAPTCHA blok kontrolü yapıyoruz.
             from db_manager import is_captcha_blocked
             if await is_captcha_blocked(url):
-                # CAPTCHA nedeniyle bloklandı; normal bloklamaya gerek yok.
                 continue
             else:
                 await mark_as_blocked(url)
@@ -251,7 +249,7 @@ async def worker(session, worker_id: int, idle_limit: int = 3):
             try:
                 await processed_collection.insert_one({
                     "url": url,
-                    "server_ip": server_ip  # IP adresini ekledik
+                    "server_ip": server_ip 
                 })
                 logger.info(f"[INSERT-TR] Worker-{worker_id} -> {url}, IP={server_ip}")
             except DuplicateKeyError:

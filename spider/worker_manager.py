@@ -58,7 +58,6 @@ async def worker_manager(session, max_workers: int):
     worker_manager_event = asyncio.Event()  # Worker kapanınca tetiklenecek event
     workers = {}
 
-    # Başlangıçta max_workers kadar worker başlat
     for i in range(max_workers):
         worker_id = len(ACTIVE_WORKERS)
         task = asyncio.create_task(worker(session, worker_id, worker_manager_event))
@@ -66,13 +65,11 @@ async def worker_manager(session, max_workers: int):
         ACTIVE_WORKERS.add(worker_id)
 
     while True:
-        await asyncio.sleep(3)  # Sürekli kontrol etmek yerine 3 saniye bekle
+        await asyncio.sleep(3)  
         active_count = len(ACTIVE_WORKERS)
         
-        # Log: Kaç worker aktif çalışıyor?
         logger.info(f"Aktif worker sayısı: {active_count}/{max_workers}")
 
-        # Eğer worker sayısı azaldıysa yenisini başlat
         if active_count < max_workers:
             new_worker_id = max(ACTIVE_WORKERS) + 1 if ACTIVE_WORKERS else 0
             task = asyncio.create_task(worker(session, new_worker_id, worker_manager_event))
@@ -80,8 +77,7 @@ async def worker_manager(session, max_workers: int):
             ACTIVE_WORKERS.add(new_worker_id)
             logger.info(f"Yeni worker başlatıldı: Worker-{new_worker_id}")
 
-        # Eğer tüm workerlar çalışıyorsa ve queue boşsa, refill_local_queue çağrılır
         if local_queue.empty():
             await refill_local_queue(batch_size=200)
 
-        await asyncio.sleep(1)  # Yeni worker oluşturmadan önce bekleme süresi
+        await asyncio.sleep(1) 

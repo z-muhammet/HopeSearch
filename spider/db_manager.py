@@ -28,7 +28,6 @@ async def create_indexes():
         await processed_collection.create_index([("url", ASCENDING)], unique=True)
         await botlinks_collection.create_index([("url", ASCENDING)], unique=True)
         await queue_collection.create_index([("url", ASCENDING)], unique=True)
-        # BotChaptaBlock için de index oluşturuyoruz
         await botChaptaBlock_collection.create_index([("url", ASCENDING)], unique=True)
         logger.info("Indexes başarıyla oluşturuldu.")
     except PyMongoError:
@@ -85,13 +84,11 @@ async def mark_as_blocked(url: str):
 async def cleanup_queue_urls(interval_seconds: int = 30):
     while True:
         try:
-            # processed_sites koleksiyonundaki bütün URL'leri hafızaya al
             processed_set = set()
             async for doc in processed_collection.find({}, {"_id": 0, "url": 1}):
                 processed_set.add(doc["url"])
 
             if processed_set:
-                # queue_urls içinde processed_set'te bulunan URL'leri temizle
                 result = await queue_collection.delete_many({"url": {"$in": list(processed_set)}})
                 if result.deleted_count:
                     logger.info(f"[QUEUE CLEANUP] {result.deleted_count} kayıt queue_urls'tan silindi (processed_sites ile çakışan).")
@@ -99,7 +96,6 @@ async def cleanup_queue_urls(interval_seconds: int = 30):
         except Exception as e:
             logger.error(f"[QUEUE CLEANUP ERROR] {type(e).__name__}: {e}", exc_info=True)
 
-        # 30 saniye bekle (ya da parametre gelen değeri)
         await asyncio.sleep(interval_seconds)
         
 async def partial_cleanup_queue_urls(batch_size: int = 10000) -> None:
@@ -107,36 +103,27 @@ async def partial_cleanup_queue_urls(batch_size: int = 10000) -> None:
     
     while True:
         try:
-            # 1) processed_collection'dan 'batch_size' kadar kayıt oku
-            #    (sadece url alanını alıyoruz).
             urls_chunk = []
             cursor = processed_collection.find({}, {"_id": 0, "url": 1}).skip(skip).limit(batch_size)
             async for doc in cursor:
                 if "url" in doc:
                     urls_chunk.append(doc["url"])
 
-            # 2) Eğer chunk boşsa, işlem tamam demektir
             if not urls_chunk:
                 logger.info("[CLEANUP] Tüm kayıtlar tarandı, işlem tamam.")
                 break
 
-            # 3) Aynı chunk içinde mükerrer URL'leri elemek için set kullan
             unique_urls = set(urls_chunk)
-
-            # 4) queue_urls'tan bu URL'leri sil
             result = await queue_collection.delete_many({"url": {"$in": list(unique_urls)}})
 
             logger.info(
                 f"[CLEANUP] skip={skip}, chunk_size={len(unique_urls)}, "
                 f"deleted={result.deleted_count} kayit silindi."
             )
-
-            # 5) Sıradaki chunk'a geçmek için skip'i artır
             skip += batch_size
 
         except PyMongoError as e:
             logger.error(f"[CLEANUP ERROR] {type(e).__name__}: {e}", exc_info=True)
-            # İsteğe bağlı olarak tekrar denemek veya tamamen çıkmak için karar verilebilir.
             break
         
 async def remove_url_from_queue_db(url: str) -> int:
@@ -150,7 +137,6 @@ async def remove_url_from_queue_db(url: str) -> int:
         logger.error(f"[DB-ERROR] remove_url_from_queue_db({url}) -> {e}", exc_info=True)
         return 0
     
-    # --- CAPTCHA Bloklama Sistemi ---
 def get_domain(url: str) -> str:
     """ URL'den domain'i çıkarır. """
     parsed_url = urlparse(url)

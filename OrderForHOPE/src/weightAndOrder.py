@@ -14,23 +14,29 @@ def calculate_page_score(page, weights, result_queue):
 
         # Booleans
         score += weights.get('h1_keyword', 0) if page.get('h1_keyword', False) else 0
+        score += weights.get('h2_keyword',0) if page.get('h2_keyword', False) else 0
+        score += weights.get('h3_keyword',0) if page.get('h3_keyword', False) else 0
+        score += weights.get('meta_keyword',0) if page.get('meta_keyword', False) else 0
         score += weights.get('title_keyword', 0) if page.get('title_keyword', False) else 0
         score += weights.get('mobile_compatibility', 0) if page.get('mobile_compatibility', False) else 0
         score += weights.get('ssl_certificate', 0) if page.get('ssl_certificate', False) else 0
+        score += weights.get('strong_texts', 0) if page.get('strong_texts', False) else 0
+        score += weights.get('underline_texts', 0) if page.get('underline_texts', False) else 0
+        
 
         # Sayısal oranlar
         score += weights.get('content_keyword_match', 0) * page.get('content_keyword_match', 0)
         score += weights.get('meta_keyword_density', 0) * page.get('meta_keyword_density', 0)
 
         # Load time (ters orantı)
-        load_time = page.get('load_time', None)
+        load_time = page.get('load_time', 2)
         if load_time and load_time > 0:
             score += weights.get('load_time', 0) / load_time
 
         # Last update difference
-        year = page.get('last_update_year')
-        month = page.get('last_update_month', 1)
-        day = page.get('last_update_day', 1)
+        year = page.get('last_update_year',0)
+        month = page.get('last_update_month', 0)
+        day = page.get('last_update_day', 0)
         if year:
             try:
                 last_update_date = datetime(year, month, day)
@@ -40,7 +46,7 @@ def calculate_page_score(page, weights, result_queue):
                 print(f"[WARN] Tarih hesaplama hatası: {e}")
 
         # Site age (ters orantı)
-        site_age = page.get('site_age')
+        site_age = page.get('site_age',2)
         if isinstance(site_age, (int, float)) and site_age >= 0:
             score += weights.get('site_age', 0) / (site_age + 1)
 
@@ -72,4 +78,4 @@ try:
     for idx, page in enumerate(sorted_list):
         print(f"Site {idx + 1}: Score: {page['score']}, URL: {page['url']}")
 except Exception as e:
-    print(f"Bir hata oluştu: {e}")
+    print(f"Bir hata oluştu: {e}")

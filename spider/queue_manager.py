@@ -61,7 +61,6 @@ async def enqueue_url_batch(url_depth_list: List[tuple[str, int]]):
     try:
         await queue_collection.insert_many(valid_docs, ordered=False)
     except BulkWriteError:
-        # Duplicate hatalarını önemseme
         pass
     except PyMongoError as e:
         logger.warning("Kuyruğa toplu eklenirken hata:", exc_info=True)

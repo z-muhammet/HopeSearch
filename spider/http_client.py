@@ -80,22 +80,21 @@ async def fetch_turkce(session: ClientSession, url: str, max_retries: int = 2) -
             encoding = chardet.detect(raw_data)["encoding"] or "utf-8"
             html_text = raw_data.decode(encoding, errors="replace")
 
-            # HTML etiketlerini temizle, sadece metni al
             clean_text = BeautifulSoup(html_text, "html.parser").get_text(separator=" ", strip=True)
-            clean_text = clean_text[:3000]  # Metni 3000 karakterle sınırla
+            clean_text = clean_text[:3000]  
 
             words = clean_text.split()
-            if len(words) < 20:  # Eğer kelime sayısı çok azsa işlem yapma
+            if len(words) < 20:  
                 return False
 
             # **Kelime bazlı değil, paragraf bazlı kontrol yapıyoruz!**
-            paragraphs = clean_text.split(". ")  # Cümlelere/paragraflara böl
+            paragraphs = clean_text.split(". ")  
 
             turkish_count = 0
             total_checked = 0
 
             for paragraph in paragraphs:
-                if len(paragraph) > 10:  # Çok kısa cümleleri es geç
+                if len(paragraph) > 10:  
                     try:
                         detected_lang = detect(paragraph)
                         if detected_lang == "tr":
@@ -105,11 +104,9 @@ async def fetch_turkce(session: ClientSession, url: str, max_retries: int = 2) -
                         logger.warning(f"LangDetect hata verdi (görmezden geliniyor): {e}")
 
             if total_checked == 0:
-                return False  # Hiç cümle kontrol edemediysek varsayılan False
+                return False 
 
             turkish_ratio = turkish_count / total_checked
-
-            #logger.info(f"[Check Turkish] -> turkish_count: {turkish_count}, total_checked: {total_checked}, turkish_ratio: {turkish_ratio}")
 
             return turkish_ratio >= 0.3
 
@@ -118,18 +115,12 @@ async def fetch_turkce(session: ClientSession, url: str, max_retries: int = 2) -
         return False
     
 def contains_captcha(soup):
-    # HTML'i ayrıştır, body bölümünü hedefle
     body = soup.body if soup.body else soup
     
-    # CAPTCHA göstergesi olabilecek öğeler:
     indicators = [
-        # Class'ında "captcha" ifadesi geçen öğeler
         body.find(lambda tag: tag.has_attr("class") and any(re.search("captcha", cls, re.I) for cls in tag.get("class", []))),
-        # ID'sinde "captcha" ifadesi geçen öğeler
         body.find(lambda tag: tag.has_attr("id") and re.search("captcha", tag.get("id", ""), re.I)),
-        # Google reCAPTCHA widget'ı (örneğin "g-recaptcha" sınıfı)
         body.find("div", {"class": re.compile("g-recaptcha", re.I)}),
-        # reCAPTCHA için data-sitekey özniteliğine sahip input'lar
         body.find("input", {"data-sitekey": True})
     ]
     
@@ -150,7 +141,7 @@ async def fetch(session: ClientSession, url: str, max_retries: int = 2) -> list[
                 if resp.status in (401, 403, 429, 503):
                     return None
 
-                raw_data = await resp.read()  # Veriyi byte olarak oku
+                raw_data = await resp.read()  
                 detected_encoding = chardet.detect(raw_data)["encoding"] or "utf-8"
                 text = raw_data.decode(detected_encoding, errors="replace")
                 
